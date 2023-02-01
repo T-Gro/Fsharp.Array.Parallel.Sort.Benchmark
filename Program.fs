@@ -25,7 +25,7 @@ type SampleRecord = {Id : int; Value : float}
 
 [<MemoryDiagnoser>]
 [<ThreadingDiagnoser>]
-[<DryJob>]
+// [<DryJob>]  // Uncomment heere for quick local testing
 type ArrayParallelSortBenchMark() = 
 
     let r = new Random(42)
