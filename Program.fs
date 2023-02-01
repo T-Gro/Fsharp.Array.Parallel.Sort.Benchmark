@@ -47,9 +47,9 @@ type ArrayParallelSortBenchMark() =
     member this.PLINQDefault () = 
         this.ArrayWithItems |> PLINQImplementation.sortBy (fun x -> x.Value)
 
-    [<Benchmark>]
-    [<Arguments(8)>]
-    member this.PLINQWithLevel (paraLevel) = 
+    [<Benchmark>]    
+    member this.PLINQWithLevel () = 
+        let paraLevel = Environment.ProcessorCount / 2
         this.ArrayWithItems |> PLINQConfiguredImplementation.sortBy paraLevel (fun x -> x.Value)
 
 
