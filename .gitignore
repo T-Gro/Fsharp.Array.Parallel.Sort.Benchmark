@@ -1,0 +1,6 @@
+
+*.vsidx
+*.lock
+bin/
+obj/
+.vs/
