@@ -8,19 +8,14 @@ open System.Threading.Tasks
 type ArrayView<'T> = {Original : 'T[] ; Offset : int ; Count : int}
     with member this.FirstItem = this.Original[this.Offset]
 
-[<Struct>]
-type ProjectedView<'A,'T> = {ProjectedItems : 'A[]; FullItems : 'T[]; Offset : int}
-    with member this.FirstItem = this.FullItems[this.Offset]
-         member this.FirstProjection = this.ProjectedItems[this.Offset]
-
-let maxPartitions = 4
+let maxPartitions = Environment.ProcessorCount/2
 let paraOptions = new ParallelOptions(MaxDegreeOfParallelism = maxPartitions)
 
 let inline createPartitions (array : 'T[]) = 
         [|
             let chunkSize = 
                 match array.Length with 
-                | smallSize when smallSize < 1024 -> smallSize
+                | smallSize when smallSize < 8*1024 -> smallSize
                 | biggerSize when biggerSize % maxPartitions = 0 -> biggerSize / maxPartitions
                 | biggerSize -> (biggerSize / maxPartitions) + 1            
          
@@ -35,42 +30,62 @@ let inline createPartitions (array : 'T[]) =
         |]
 
 
-let sortBy (project : 'T -> 'A) (array : 'T[])  : 'T[] = 
-    let partitions = createPartitions array
-    let mutable unmergedResults = Array.zeroCreate partitions.Length
-    Parallel.For(0,partitions.Length,paraOptions, fun i ->      
-        let localClone : 'T[] = Array.zeroCreate (partitions[i].Count)
-        Array.Copy(array, partitions[i].Offset, localClone, 0, partitions[i].Count)
-        let projectedFields = localClone |> Array.map project
-        Array.Sort<_,_>(projectedFields, localClone, LanguagePrimitives.FastGenericComparer<'A>)      
-        unmergedResults[i] <- {ProjectedItems = projectedFields; Offset = 0; FullItems = localClone}
+let preparePresortedRuns (project : 'T -> 'A) resultsArray keysArray = 
+    let partitions = createPartitions resultsArray
+    Parallel.For(0,partitions.Length,paraOptions, fun i ->  
+        Array.Sort<_,_>(keysArray, resultsArray,partitions[i].Offset,partitions[i].Count, LanguagePrimitives.FastGenericComparer<'A>) 
         ) |> ignore
 
-    let finalresults = Array.zeroCreate array.Length
-    let mutable currentIdx = 0
+    partitions
 
-    while unmergedResults.Length > 1 do
-        let streams = unmergedResults
-        let mutable indexOfMin = 0
-        let mutable minElement = streams[0].FirstProjection
-        for i=1 to streams.Length-1 do
+let inline swap leftIdx rightIdx (array:'T[]) = 
+    let temp = array[leftIdx]
+    array[leftIdx] <- array[rightIdx]
+    array[rightIdx] <- temp
 
-            let first = streams[i].FirstProjection
-            if first < minElement then
-                minElement <- first
-                indexOfMin <- i
+let mergeTwoRuns (left:ArrayView<'T>) (right: ArrayView<'T>) (resultsArray:'T[]) (keysArray:'A[]) = 
+    let mutable leftIdx = left.Offset
+    let rightIdx = right.Offset
+    let leftMax,rightMax = left.Offset+left.Count, right.Offset+right.Count
 
-        let minStream = streams[indexOfMin]
-        finalresults[currentIdx] <- minStream.FirstItem
-        currentIdx <- currentIdx + 1
-        if minStream.Offset+1 = minStream.FullItems.Length then
-            unmergedResults <- unmergedResults |> Array.removeAt indexOfMin
-        else
-            unmergedResults[indexOfMin] <- {minStream with Offset = minStream.Offset+1}
+    while leftIdx < leftMax  do
+        while (leftIdx<leftMax) && keysArray[leftIdx] <= keysArray[rightIdx] do
+            leftIdx <- leftIdx + 1
 
-    Array.Copy(unmergedResults[0].FullItems, unmergedResults[0].Offset, finalresults, currentIdx, finalresults.Length-currentIdx)
+        let oldLeftKey = keysArray[leftIdx]        
+        let mutable writableRightIdx = rightIdx
+        while (writableRightIdx < rightMax) && oldLeftKey > keysArray[writableRightIdx] do   
+            keysArray |> swap leftIdx writableRightIdx
+            resultsArray |> swap leftIdx writableRightIdx
+            writableRightIdx <- writableRightIdx + 1
+            leftIdx <- leftIdx + 1
+
+    {left with Count = left.Count + right.Count}
+
+let rec mergeRunsInParallel (runs:ArrayView<'T> []) resultsArray keysArray = 
+    match runs with
+    | [|singleRun|] -> Task.FromResult singleRun
+    | [|first;second|] -> Task.Run( fun () -> mergeTwoRuns first second resultsArray keysArray)
+    | [||] -> failwith "Should not happen"
+    | biggerArray ->       
+        task{
+            let midIndex = biggerArray.Length/2
+            let firstT = mergeRunsInParallel biggerArray[0..midIndex-1] resultsArray keysArray
+            let secondT = mergeRunsInParallel biggerArray[midIndex..] resultsArray keysArray
+            
+            Task.WaitAll(firstT,secondT)
+
+            return! mergeRunsInParallel [|firstT.Result;secondT.Result|] resultsArray keysArray
+        }    
+
+
+let sortByWithRecursiveMerging (project : 'T -> 'A) (originalArray : 'T[])  : 'T[] = 
+    if originalArray.Length < 8*1024 then
+        Array.sortBy project originalArray
+    else
+        let results = Array.copy originalArray      
+        let projectedFields = Array.Parallel.map project results
+        let preSortedPartitions = preparePresortedRuns project results projectedFields      
+        mergeRunsInParallel preSortedPartitions results projectedFields |> Task.WaitAll
         
-
-    finalresults
-
-
+        results

@@ -47,7 +47,7 @@ type ArrayParallelSortBenchMark<'T when 'T :> IBenchMarkElement<'T>>() =
 
     let r = new Random(42)
 
-    [<Params(1_000,1_000_000,100_000_000)>]     
+    [<Params(1_000,1_000_000,100_000_000)>]      
     member val NumberOfItems = -1 with get,set
 
     member val ArrayWithItems = Unchecked.defaultof<'T[]> with get,set
@@ -70,8 +70,8 @@ type ArrayParallelSortBenchMark<'T when 'T :> IBenchMarkElement<'T>>() =
         this.ArrayWithItems |> PLINQConfiguredImplementation.sortBy paraLevel ('T.Projection())
 
     [<Benchmark>]
-    member this.NaiveNWayMerge () = 
-        this.ArrayWithItems |> NaiveNwayMerge.sortBy ('T.Projection())
+    member this.NaiveRecursiveMerge () = 
+        this.ArrayWithItems |> NaiveNwayMerge.sortByWithRecursiveMerging ('T.Projection())
 
 
 
