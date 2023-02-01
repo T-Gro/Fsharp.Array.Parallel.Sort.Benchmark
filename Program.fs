@@ -42,7 +42,7 @@ type StructRecord = {Id : int; Value : float}
 [<ThreadingDiagnoser>]
 [<GenericTypeArguments(typeof<ReferenceRecord>)>]
 [<GenericTypeArguments(typeof<StructRecord>)>]
-// [<DryJob>]  // Uncomment heere for quick local testing
+//[<DryJob>]  // Uncomment heere for quick local testing
 type ArrayParallelSortBenchMark<'T when 'T :> IBenchMarkElement<'T>>() = 
 
     let r = new Random(42)
@@ -69,9 +69,14 @@ type ArrayParallelSortBenchMark<'T when 'T :> IBenchMarkElement<'T>>() =
         let paraLevel = Environment.ProcessorCount / 2
         this.ArrayWithItems |> PLINQConfiguredImplementation.sortBy paraLevel ('T.Projection())
 
+    [<Benchmark>]
+    member this.NaiveNWayMerge () = 
+        this.ArrayWithItems |> NaiveNwayMerge.sortBy ('T.Projection())
+
 
 
 [<EntryPoint>]
 let main argv =
+
     BenchmarkSwitcher.FromTypes([|typedefof<ArrayParallelSortBenchMark<ReferenceRecord> >|]).Run(argv) |> ignore   
     0
