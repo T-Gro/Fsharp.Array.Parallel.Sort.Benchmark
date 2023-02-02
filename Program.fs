@@ -70,8 +70,12 @@ type ArrayParallelSortBenchMark<'T when 'T :> IBenchMarkElement<'T>>() =
         this.ArrayWithItems |> PLINQConfiguredImplementation.sortBy paraLevel ('T.Projection())
 
     [<Benchmark>]
-    member this.NaiveRecursiveMerge () = 
+    member this.NaiveRecursiveMergeUsingTasks () = 
         this.ArrayWithItems |> NaiveNwayMerge.sortByWithRecursiveMerging ('T.Projection())
+
+    [<Benchmark>]
+    member this.NaiveRecursiveMergeUsingParallelModule () = 
+        this.ArrayWithItems |> NaiveNwayMerge.sortByWithRecursiveMergingUsingParallelModule ('T.Projection())
 
 
 
