@@ -47,7 +47,7 @@ type ArrayParallelSortBenchMark<'T when 'T :> IBenchMarkElement<'T>>() =
 
     let r = new Random(42)
 
-    [<Params(1_000,1_000_000,100_000_000)>]      
+    [<Params(1_000,1_000_000,10_000_000)>]      
     member val NumberOfItems = -1 with get,set
 
     member val ArrayWithItems = Unchecked.defaultof<'T[]> with get,set
@@ -64,14 +64,18 @@ type ArrayParallelSortBenchMark<'T when 'T :> IBenchMarkElement<'T>>() =
     member this.PLINQDefault () = 
         this.ArrayWithItems |> PLINQImplementation.sortBy ('T.Projection())
 
-    [<Benchmark>]    
+    //[<Benchmark>]    
     member this.PLINQWithLevel () = 
         let paraLevel = Environment.ProcessorCount / 2
         this.ArrayWithItems |> PLINQConfiguredImplementation.sortBy paraLevel ('T.Projection())
 
-    [<Benchmark>]
+    //[<Benchmark>]
     member this.NaiveRecursiveMergeUsingTasks () = 
         this.ArrayWithItems |> NaiveNwayMerge.sortByWithRecursiveMerging ('T.Projection())
+
+    [<Benchmark>]
+    member this.SortByWithBubbling () = 
+        this.ArrayWithItems |> NaiveNwayMerge.sortByWithBubbling ('T.Projection())
 
     [<Benchmark>]
     member this.NaiveRecursiveMergeUsingParallelModule () = 

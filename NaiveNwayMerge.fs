@@ -63,6 +63,42 @@ let inline mergeTwoRuns (left:ArrayView<'T>) (right: ArrayView<'T>) (resultsArra
 
     {left with Count = left.Count + right.Count}
 
+let private correctMergeUsingBubbling
+    (keysArray: 'TKey[])
+    (left: ArrayView<'T>)
+    (right: ArrayView<'T>)
+    =
+    assert(left.Offset + left.Count = right.Offset)
+    assert(Object.ReferenceEquals(left.Original,right.Original))
+    assert(right.Offset + right.Count <= keysArray.Length)
+
+    let mutable leftIdx,rightIdx = left.Offset, right.Offset
+    let rightMax,fullArray = right.Offset + right.Count, left.Original
+
+    if keysArray[rightIdx-1] <= keysArray[rightIdx] then
+        ()
+    else
+        while leftIdx < rightIdx && rightIdx < rightMax do
+            if keysArray[leftIdx] <= keysArray[rightIdx] then
+                leftIdx <- leftIdx + 1
+            else
+                let rightKey,rightValue = keysArray[rightIdx],fullArray[rightIdx]                 
+                let mutable whereShouldFirstOfRightGo = rightIdx
+
+                // Bubble-down the 1st element of right segment to its correct position
+                while whereShouldFirstOfRightGo <> leftIdx do
+                    keysArray[whereShouldFirstOfRightGo] <- keysArray[whereShouldFirstOfRightGo - 1]
+                    fullArray[whereShouldFirstOfRightGo] <- fullArray[whereShouldFirstOfRightGo - 1]
+                    whereShouldFirstOfRightGo <- whereShouldFirstOfRightGo - 1
+
+                keysArray[leftIdx] <- rightKey
+                fullArray[leftIdx] <- rightValue
+
+                leftIdx <- leftIdx + 1
+                rightIdx <- rightIdx + 1
+
+    {left with Count = left.Count + right.Count}
+
 
 (* The difference between the two methods is in how they start parallelization of the child tasks *)
 
@@ -98,6 +134,21 @@ let rec mergeRunsInParallelParallelModule (runs:ArrayView<'T> []) resultsArray k
 
         mergeRunsInParallelParallelModule [|first.Value;second.Value|] resultsArray keysArray
 
+let rec mergeRunsInParallelParallelModuleAndBubbling (runs:ArrayView<'T> []) keysArray = 
+    match runs with
+    | [|singleRun|] ->  singleRun
+    | [|first;second|] -> correctMergeUsingBubbling keysArray first second 
+    | [||] -> failwith "Should not happen"
+    | biggerArray ->   
+        let mutable first = None
+        let mutable second = None
+        let midIndex = biggerArray.Length/2
+        Parallel.Invoke( 
+            (fun () -> first <- Some (mergeRunsInParallelParallelModuleAndBubbling biggerArray[0..midIndex-1] keysArray)),
+            (fun () -> second <- Some (mergeRunsInParallelParallelModuleAndBubbling biggerArray[midIndex..] keysArray)))
+
+        correctMergeUsingBubbling keysArray first.Value second.Value
+
 
 let inline sortByWithRecursiveMerging (project : 'T -> 'A) (originalArray : 'T[])  : 'T[] = 
     if originalArray.Length < 8*1024 then
@@ -118,5 +169,16 @@ let inline sortByWithRecursiveMergingUsingParallelModule (project : 'T -> 'A) (o
         let projectedFields = Array.Parallel.map project results
         let preSortedPartitions = preparePresortedRuns project results projectedFields      
         mergeRunsInParallelParallelModule preSortedPartitions results projectedFields |> ignore
+        
+        results
+
+let inline sortByWithBubbling (project : 'T -> 'A) (originalArray : 'T[])  : 'T[] = 
+    if originalArray.Length < 8*1024 then
+        Array.sortBy project originalArray
+    else
+        let results = Array.copy originalArray      
+        let projectedFields = Array.Parallel.map project results
+        let preSortedPartitions = preparePresortedRuns project results projectedFields      
+        mergeRunsInParallelParallelModuleAndBubbling preSortedPartitions projectedFields |> ignore
         
         results
