@@ -10,6 +10,7 @@ type ArrayView<'T> = {Original : 'T[] ; Offset : int ; Count : int}
 
 let maxPartitions = Environment.ProcessorCount/2
 let paraOptions = new ParallelOptions(MaxDegreeOfParallelism = maxPartitions)
+let mutable passNullAsComparer = false
 
 let inline createPartitions (array : 'T[]) = 
         [|
@@ -32,8 +33,9 @@ let inline createPartitions (array : 'T[]) =
 
 let preparePresortedRuns (project : 'T -> 'A) resultsArray keysArray = 
     let partitions = createPartitions resultsArray
+    let comparer = if passNullAsComparer then null else LanguagePrimitives.FastGenericComparer<'A>
     Parallel.For(0,partitions.Length,paraOptions, fun i ->  
-        Array.Sort<_,_>(keysArray, resultsArray,partitions[i].Offset,partitions[i].Count, LanguagePrimitives.FastGenericComparer<'A>) 
+        Array.Sort<_,_>(keysArray, resultsArray,partitions[i].Offset,partitions[i].Count, comparer) 
         ) |> ignore
 
     partitions
@@ -60,6 +62,34 @@ let inline mergeTwoRuns (left:ArrayView<'T>) (right: ArrayView<'T>) (resultsArra
             resultsArray |> swap leftIdx writableRightIdx
             writableRightIdx <- writableRightIdx + 1
             leftIdx <- leftIdx + 1
+
+    {left with Count = left.Count + right.Count}
+
+let inline mergeTwoRunsByAllocating (left:ArrayView<'T>) (right: ArrayView<'T>) (resultsArray:'T[]) (keysArray:'A[]) = 
+
+    let mutable leftIdx,rightIdx,finalIdx = left.Offset,right.Offset, left.Offset
+    let leftMax,rightMax = left.Offset+left.Count, right.Offset+right.Count
+
+    while leftIdx < leftMax && rightIdx < rightMax do 
+        if keysArray[leftIdx] <= keysArray[rightIdx] then
+            resultsArray.[finalIdx] <- resultsArray.[leftIdx]
+            keysArray.[finalIdx] <- keysArray.[leftIdx]
+            leftIdx <- leftIdx + 1
+        else
+            resultsArray.[finalIdx] <- resultsArray.[rightIdx]
+            keysArray.[finalIdx] <- keysArray.[rightIdx]
+            rightIdx <- rightIdx + 1
+        finalIdx <- finalIdx + 1
+
+    while leftIdx < leftMax do
+        resultsArray.[finalIdx] <- resultsArray.[leftIdx]
+        leftIdx <- leftIdx + 1
+        finalIdx <- finalIdx + 1
+
+
+    while finalIdx < rightMax do
+        resultsArray.[finalIdx] <- resultsArray.[finalIdx]  
+        finalIdx <- finalIdx + 1
 
     {left with Count = left.Count + right.Count}
 
@@ -134,6 +164,21 @@ let rec mergeRunsInParallelParallelModule (runs:ArrayView<'T> []) resultsArray k
 
         mergeRunsInParallelParallelModule [|first.Value;second.Value|] resultsArray keysArray
 
+let rec mergeRunsByAllocating (runs:ArrayView<'T> []) resultsArray keysArray = 
+    match runs with
+    | [|singleRun|] ->  singleRun
+    | [|first;second|] -> mergeTwoRunsByAllocating first second resultsArray keysArray
+    | [||] -> failwith "Should not happen"
+    | biggerArray ->   
+        let mutable first = None
+        let mutable second = None
+        let midIndex = biggerArray.Length/2
+        Parallel.Invoke( 
+            (fun () -> first <- Some (mergeRunsByAllocating biggerArray[0..midIndex-1] resultsArray keysArray)),
+            (fun () -> second <- Some (mergeRunsByAllocating biggerArray[midIndex..] resultsArray keysArray)))
+
+        mergeRunsByAllocating [|first.Value;second.Value|] resultsArray keysArray
+
 let rec mergeRunsInParallelParallelModuleAndBubbling (runs:ArrayView<'T> []) keysArray = 
     match runs with
     | [|singleRun|] ->  singleRun
@@ -151,7 +196,7 @@ let rec mergeRunsInParallelParallelModuleAndBubbling (runs:ArrayView<'T> []) key
 
 
 let inline sortByWithRecursiveMerging (project : 'T -> 'A) (originalArray : 'T[])  : 'T[] = 
-    if originalArray.Length < 8*1024 then
+    if originalArray.Length < 100 then
         Array.sortBy project originalArray
     else
         let results = Array.copy originalArray      
@@ -162,23 +207,32 @@ let inline sortByWithRecursiveMerging (project : 'T -> 'A) (originalArray : 'T[]
         results
 
 let inline sortByWithRecursiveMergingUsingParallelModule (project : 'T -> 'A) (originalArray : 'T[])  : 'T[] = 
-    if originalArray.Length < 8*1024 then
+    if originalArray.Length < 100 then
         Array.sortBy project originalArray
-    else
-        let results = Array.copy originalArray      
-        let projectedFields = Array.Parallel.map project results
-        let preSortedPartitions = preparePresortedRuns project results projectedFields      
-        mergeRunsInParallelParallelModule preSortedPartitions results projectedFields |> ignore
+    else       
+        let projectedFields = Array.Parallel.map project originalArray
+        let preSortedPartitions = preparePresortedRuns project originalArray projectedFields      
+        mergeRunsInParallelParallelModule preSortedPartitions originalArray projectedFields |> ignore
         
-        results
+        originalArray
+
+let inline sortByWithAllocateyMerge (project : 'T -> 'A) (originalArray : 'T[])  : 'T[] = 
+    if originalArray.Length < 100 then
+        Array.sortBy project originalArray
+    else       
+        let resultsCopy = Array.zeroCreate originalArray.Length
+        let projectedFields = Array.Parallel.map project originalArray
+        let preSortedPartitions = preparePresortedRuns project originalArray projectedFields      
+        mergeRunsByAllocating preSortedPartitions resultsCopy projectedFields |> ignore
+        
+        resultsCopy
 
 let inline sortByWithBubbling (project : 'T -> 'A) (originalArray : 'T[])  : 'T[] = 
-    if originalArray.Length < 8*1024 then
+    if originalArray.Length < 100 then
         Array.sortBy project originalArray
-    else
-        let results = Array.copy originalArray      
-        let projectedFields = Array.Parallel.map project results
-        let preSortedPartitions = preparePresortedRuns project results projectedFields      
+    else        
+        let projectedFields = Array.Parallel.map project originalArray
+        let preSortedPartitions = preparePresortedRuns project originalArray projectedFields      
         mergeRunsInParallelParallelModuleAndBubbling preSortedPartitions projectedFields |> ignore
         
-        results
+        originalArray

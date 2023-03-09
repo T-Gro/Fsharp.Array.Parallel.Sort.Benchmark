@@ -47,14 +47,15 @@ type ArrayParallelSortBenchMark<'T when 'T :> IBenchMarkElement<'T>>() =
 
     let r = new Random(42)
 
-    [<Params(1_000,1_000_000,10_000_000)>]      
+    [<Params(2_000,2_500,50_000,500_000,1_000_000,10_000_000)>]      
     member val NumberOfItems = -1 with get,set
 
     member val ArrayWithItems = Unchecked.defaultof<'T[]> with get,set
 
     [<GlobalSetup>]
     member this.GlobalSetup () = 
-        this.ArrayWithItems <- Array.init this.NumberOfItems (fun idx -> 'T.Create(idx,r.NextDouble()))        
+        this.ArrayWithItems <- Array.init this.NumberOfItems (fun idx -> 'T.Create(idx,r.NextDouble()))     
+        NaiveNwayMerge.passNullAsComparer <- false
 
     [<Benchmark>]
     member this.Sequential () = 
@@ -75,7 +76,19 @@ type ArrayParallelSortBenchMark<'T when 'T :> IBenchMarkElement<'T>>() =
 
     [<Benchmark>]
     member this.SortByWithBubbling () = 
+        if this.NumberOfItems > 100_000 then failwith "This is too big for bubbling"
         this.ArrayWithItems |> NaiveNwayMerge.sortByWithBubbling ('T.Projection())
+
+    [<Benchmark>]
+    member this.SortWithAllocations () = 
+        this.ArrayWithItems |> NaiveNwayMerge.sortByWithAllocateyMerge ('T.Projection())    
+
+    [<Benchmark>]
+    member this.SortWithAllocationsAndComparerTrocl () = 
+        NaiveNwayMerge.passNullAsComparer <- true
+        let sorted = this.ArrayWithItems |> NaiveNwayMerge.sortByWithAllocateyMerge ('T.Projection())
+        NaiveNwayMerge.passNullAsComparer <- false
+        sorted
 
     [<Benchmark>]
     member this.NaiveRecursiveMergeUsingParallelModule () = 
