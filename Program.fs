@@ -21,21 +21,21 @@ module PLINQConfiguredImplementation =
 
 type IBenchMarkElement<'T when 'T :> IBenchMarkElement<'T>> =
     static abstract Create: int * float -> 'T
-    static abstract Projection: unit -> ('T -> float)
+    static abstract Projection: unit -> ('T -> string)
 
 
 type ReferenceRecord = {Id : int; Value : float}
     with interface IBenchMarkElement<ReferenceRecord> 
             with 
                 static member Create(id,value) = {Id = id; Value = value}
-                static member Projection() = fun x -> x.Value
+                static member Projection() = fun x -> x.Value |> sin |> cos |> string 
 
 [<Struct>]
 type StructRecord = {Id : int; Value : float}
     with interface IBenchMarkElement<StructRecord> 
             with 
                 static member Create(id,value) = {Id = id; Value = value}
-                static member Projection() = fun x -> x.Value
+                static member Projection() = fun x -> x.Value |> sin |> cos |> string 
 
 
 [<MemoryDiagnoser>]
