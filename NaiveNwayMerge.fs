@@ -65,35 +65,37 @@ let inline mergeTwoRuns (left:ArrayView<'T>) (right: ArrayView<'T>) (resultsArra
 
     {left with Count = left.Count + right.Count}
 
-let inline mergeTwoRunsByAllocating (left:ArrayView<'T>) (right: ArrayView<'T>) (resultsArray:'T[]) (keysArray:'A[]) = 
+let inline mergeTwoRunsByAllocating (left:ArrayView<'T>) (right: ArrayView<'T>) (resultsArray:'T[]) (keysArray:'A[]) (keysResults:'A[]) = 
 
     let mutable leftIdx,rightIdx,finalIdx = left.Offset,right.Offset, left.Offset
-    let leftMax,rightMax = left.Offset+left.Count, right.Offset+right.Count
+    let leftMax,rightMax,origArray = left.Offset+left.Count, right.Offset+right.Count, left.Original
 
     while leftIdx < leftMax && rightIdx < rightMax do 
         if keysArray[leftIdx] <= keysArray[rightIdx] then
-            resultsArray.[finalIdx] <- resultsArray.[leftIdx]
-            keysArray.[finalIdx] <- keysArray.[leftIdx]
+            resultsArray.[finalIdx] <- origArray.[leftIdx]
+            keysResults.[finalIdx] <- keysArray.[leftIdx]
             leftIdx <- leftIdx + 1
         else
-            resultsArray.[finalIdx] <- resultsArray.[rightIdx]
-            keysArray.[finalIdx] <- keysArray.[rightIdx]
+            resultsArray.[finalIdx] <- origArray.[rightIdx]
+            keysResults.[finalIdx] <- keysArray.[rightIdx]
             rightIdx <- rightIdx + 1
         finalIdx <- finalIdx + 1
 
     while leftIdx < leftMax do
-        resultsArray.[finalIdx] <- resultsArray.[leftIdx]
+        resultsArray.[finalIdx] <- origArray.[leftIdx]
+        keysResults.[finalIdx] <- keysArray.[leftIdx]
         leftIdx <- leftIdx + 1
         finalIdx <- finalIdx + 1
 
 
     while finalIdx < rightMax do
-        resultsArray.[finalIdx] <- resultsArray.[finalIdx]  
+        resultsArray.[finalIdx] <- origArray.[finalIdx]  
+        keysResults.[finalIdx] <- keysArray.[finalIdx]
         finalIdx <- finalIdx + 1
 
-    {left with Count = left.Count + right.Count}
+    {left with Count = left.Count + right.Count; Original = resultsArray}
 
-let private correctMergeUsingBubbling
+let correctMergeUsingBubbling
     (keysArray: 'TKey[])
     (left: ArrayView<'T>)
     (right: ArrayView<'T>)
@@ -164,20 +166,20 @@ let rec mergeRunsInParallelParallelModule (runs:ArrayView<'T> []) resultsArray k
 
         mergeRunsInParallelParallelModule [|first.Value;second.Value|] resultsArray keysArray
 
-let rec mergeRunsByAllocating (runs:ArrayView<'T> []) resultsArray keysArray = 
+let rec mergeRunsByAllocating (runs:ArrayView<'T> []) arrayForWriting keysForWriting keysForReading = 
     match runs with
     | [|singleRun|] ->  singleRun
-    | [|first;second|] -> mergeTwoRunsByAllocating first second resultsArray keysArray
+    | [|first;second|] -> mergeTwoRunsByAllocating first second arrayForWriting keysForWriting keysForReading
     | [||] -> failwith "Should not happen"
     | biggerArray ->   
         let mutable first = None
         let mutable second = None
         let midIndex = biggerArray.Length/2
         Parallel.Invoke( 
-            (fun () -> first <- Some (mergeRunsByAllocating biggerArray[0..midIndex-1] resultsArray keysArray)),
-            (fun () -> second <- Some (mergeRunsByAllocating biggerArray[midIndex..] resultsArray keysArray)))
+            (fun () -> first <- Some (mergeRunsByAllocating biggerArray[0..midIndex-1] arrayForWriting keysForWriting keysForReading)),
+            (fun () -> second <- Some (mergeRunsByAllocating biggerArray[midIndex..] arrayForWriting keysForWriting keysForReading)))
 
-        mergeRunsByAllocating [|first.Value;second.Value|] resultsArray keysArray
+        mergeRunsByAllocating [|first.Value;second.Value|] (runs[0].Original) keysForReading keysForWriting
 
 let rec mergeRunsInParallelParallelModuleAndBubbling (runs:ArrayView<'T> []) keysArray = 
     match runs with
@@ -222,10 +224,11 @@ let inline sortByWithAllocateyMerge (project : 'T -> 'A) (originalArray : 'T[]) 
     else       
         let resultsCopy = Array.zeroCreate originalArray.Length
         let projectedFields = Array.Parallel.map project originalArray
+        let projectionCopy = Array.copy projectedFields
         let preSortedPartitions = preparePresortedRuns project originalArray projectedFields      
-        mergeRunsByAllocating preSortedPartitions resultsCopy projectedFields |> ignore
+        let finalRun = mergeRunsByAllocating preSortedPartitions resultsCopy projectedFields projectionCopy 
         
-        resultsCopy
+        finalRun.Original
 
 let inline sortByWithBubbling (project : 'T -> 'A) (originalArray : 'T[])  : 'T[] = 
     if originalArray.Length < 100 then

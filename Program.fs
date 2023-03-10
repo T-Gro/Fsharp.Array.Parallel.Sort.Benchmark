@@ -43,19 +43,19 @@ type StructRecord = {Id : int; Value : float}
 [<GenericTypeArguments(typeof<ReferenceRecord>)>]
 [<GenericTypeArguments(typeof<StructRecord>)>]
 //[<DryJob>]  // Uncomment heere for quick local testing
-type ArrayParallelSortBenchMark<'T when 'T :> IBenchMarkElement<'T>>() = 
+type ArrayParallelSortBenchMark<'T when 'T :> IBenchMarkElement<'T> and 'T:equality>() = 
 
     let r = new Random(42)
 
-    [<Params(2_000,2_500,50_000,500_000,1_000_000,10_000_000)>]      
+    //[<Params(2_500,5_000,50_000,500_000,4_000_000,20_000_000)>] 
+    [<Params(50_000,250_000,1_250_000)>] 
     member val NumberOfItems = -1 with get,set
-
     member val ArrayWithItems = Unchecked.defaultof<'T[]> with get,set
+
 
     [<GlobalSetup>]
     member this.GlobalSetup () = 
-        this.ArrayWithItems <- Array.init this.NumberOfItems (fun idx -> 'T.Create(idx,r.NextDouble()))     
-        NaiveNwayMerge.passNullAsComparer <- false
+        this.ArrayWithItems <- Array.init this.NumberOfItems (fun idx -> 'T.Create(idx,r.NextDouble()))  
 
     [<Benchmark>]
     member this.Sequential () = 
@@ -65,39 +65,28 @@ type ArrayParallelSortBenchMark<'T when 'T :> IBenchMarkElement<'T>>() =
     member this.PLINQDefault () = 
         this.ArrayWithItems |> PLINQImplementation.sortBy ('T.Projection())
 
-    //[<Benchmark>]    
-    member this.PLINQWithLevel () = 
-        let paraLevel = Environment.ProcessorCount / 2
-        this.ArrayWithItems |> PLINQConfiguredImplementation.sortBy paraLevel ('T.Projection())
+    [<Benchmark>]
+    member this.ParallelMergeAllCpu () = 
+        ParallelMergeSort.maxPartitions <- Environment.ProcessorCount
+        this.ArrayWithItems |> ParallelMergeSort.sortBy ('T.Projection())
 
-    //[<Benchmark>]
-    member this.NaiveRecursiveMergeUsingTasks () = 
-        this.ArrayWithItems |> NaiveNwayMerge.sortByWithRecursiveMerging ('T.Projection())
 
     [<Benchmark>]
-    member this.SortByWithBubbling () = 
-        if this.NumberOfItems > 100_000 then failwith "This is too big for bubbling"
-        this.ArrayWithItems |> NaiveNwayMerge.sortByWithBubbling ('T.Projection())
+    member this.JustRunsForReference () = 
+        ParallelMergeSort.maxPartitions <- Environment.ProcessorCount
+        this.ArrayWithItems |> ParallelMergeSort.justCreateRunsForReference ('T.Projection())
 
     [<Benchmark>]
-    member this.SortWithAllocations () = 
-        this.ArrayWithItems |> NaiveNwayMerge.sortByWithAllocateyMerge ('T.Projection())    
+    member this.MergeNRunsUsingHeap () = 
+        ParallelMergeSort.maxPartitions <- Environment.ProcessorCount
+        this.ArrayWithItems |> ParallelMergeSort.mergeUsingHeap ('T.Projection())
 
-    [<Benchmark>]
-    member this.SortWithAllocationsAndComparerTrocl () = 
-        NaiveNwayMerge.passNullAsComparer <- true
-        let sorted = this.ArrayWithItems |> NaiveNwayMerge.sortByWithAllocateyMerge ('T.Projection())
-        NaiveNwayMerge.passNullAsComparer <- false
-        sorted
-
-    [<Benchmark>]
-    member this.NaiveRecursiveMergeUsingParallelModule () = 
-        this.ArrayWithItems |> NaiveNwayMerge.sortByWithRecursiveMergingUsingParallelModule ('T.Projection())
 
 
 
 [<EntryPoint>]
 let main argv =
+
 
     BenchmarkSwitcher.FromTypes([|typedefof<ArrayParallelSortBenchMark<ReferenceRecord> >|]).Run(argv) |> ignore   
     0
