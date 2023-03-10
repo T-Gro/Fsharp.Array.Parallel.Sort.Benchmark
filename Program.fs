@@ -21,34 +21,57 @@ module PLINQConfiguredImplementation =
 
 type IBenchMarkElement<'T when 'T :> IBenchMarkElement<'T>> =
     static abstract Create: int * float -> 'T
-    static abstract Projection: unit -> ('T -> string)
+    static abstract Projection: unit -> ('T -> int)
 
 
 type ReferenceRecord = {Id : int; Value : float}
     with interface IBenchMarkElement<ReferenceRecord> 
             with 
                 static member Create(id,value) = {Id = id; Value = value}
-                static member Projection() = fun x -> x.Value |> sin |> cos |> string 
+                static member Projection() = fun x -> x.Value |> sin |> cos |> string  |> hash |> string |> String.length
 
 [<Struct>]
 type StructRecord = {Id : int; Value : float}
     with interface IBenchMarkElement<StructRecord> 
             with 
                 static member Create(id,value) = {Id = id; Value = value}
-                static member Projection() = fun x -> x.Value |> sin |> cos |> string 
+                static member Projection() = fun x -> x.Value |> sin |> cos |> string  |> hash |> string |> String.length
+
+[<Struct>]
+type StructRecordCheapProjection = {Id : int; Value : float}
+    with interface IBenchMarkElement<StructRecordCheapProjection> 
+            with 
+                static member Create(id,value) = {Id = id; Value = value}
+                static member Projection() = fun x -> x.Value.ToString() |> hash
+
+[<Struct>]
+type StructRecordNoOpProjectionPresorted = {Id : int; Value : float}
+    with interface IBenchMarkElement<StructRecordNoOpProjectionPresorted> 
+            with 
+                static member Create(id,value) = {Id = id; Value = value}
+                static member Projection() = fun x -> x.Id
+
+[<Struct>]
+type StructRecordNoOpProjectionInverselyPresorted = {Id : int; Value : float}
+    with interface IBenchMarkElement<StructRecordNoOpProjectionInverselyPresorted> 
+            with 
+                static member Create(id,value) = {Id = id; Value = value}
+                static member Projection() = fun x -> -x.Id
 
 
 [<MemoryDiagnoser>]
 [<ThreadingDiagnoser>]
 [<GenericTypeArguments(typeof<ReferenceRecord>)>]
 [<GenericTypeArguments(typeof<StructRecord>)>]
+[<GenericTypeArguments(typeof<StructRecordCheapProjection>)>]
+[<GenericTypeArguments(typeof<StructRecordNoOpProjectionPresorted>)>]
+[<GenericTypeArguments(typeof<StructRecordNoOpProjectionInverselyPresorted>)>]
 //[<DryJob>]  // Uncomment heere for quick local testing
 type ArrayParallelSortBenchMark<'T when 'T :> IBenchMarkElement<'T> and 'T:equality>() = 
 
     let r = new Random(42)
 
-    //[<Params(2_500,5_000,50_000,500_000,4_000_000,20_000_000)>] 
-    [<Params(250,1_000,4_000,20_000,100_000)>] 
+    [<Params(500,1_000,2_500,5_000,50_000,500_000,4_000_000,20_000_000)>] 
     member val NumberOfItems = -1 with get,set
     member val ArrayWithItems = Unchecked.defaultof<'T[]> with get,set
 
@@ -71,12 +94,12 @@ type ArrayParallelSortBenchMark<'T when 'T :> IBenchMarkElement<'T> and 'T:equal
         this.ArrayWithItems |> ParallelMergeSort.sortBy ('T.Projection())
 
 
-    [<Benchmark>]
+    //[<Benchmark>]
     member this.JustRunsForReference () = 
         ParallelMergeSort.maxPartitions <- Environment.ProcessorCount
         this.ArrayWithItems |> ParallelMergeSort.justCreateRunsForReference ('T.Projection())
 
-    [<Benchmark>]
+    //[<Benchmark>]
     member this.MergeNRunsUsingHeap () = 
         ParallelMergeSort.maxPartitions <- Environment.ProcessorCount
         this.ArrayWithItems |> ParallelMergeSort.mergeUsingHeap ('T.Projection())
@@ -91,5 +114,6 @@ type ArrayParallelSortBenchMark<'T when 'T :> IBenchMarkElement<'T> and 'T:equal
 
 [<EntryPoint>]
 let main argv =    
+
     BenchmarkSwitcher.FromTypes([|typedefof<ArrayParallelSortBenchMark<ReferenceRecord> >|]).Run(argv) |> ignore   
     0

@@ -40,12 +40,19 @@ let partitionIntoTwo (orig:ArraySegment<'T>) (keys:'A[]) : ArraySegment<'T> * Ar
             rightIdx <- rightIdx - 1
 
         if leftIdx < rightIdx then
-            swap leftIdx rightIdx
+            swap leftIdx rightIdx     
             leftIdx <- leftIdx + 1
             rightIdx <- rightIdx - 1
 
-    new ArraySegment<_>(origArray, offset=firstIdx, count=leftIdx - firstIdx), 
-    new ArraySegment<_>(origArray, offset=leftIdx, count=lastIDx - leftIdx + 1)
+    while keys[leftIdx] >= pivotKey && leftIdx>firstIdx do   
+        leftIdx <- leftIdx - 1
+    while keys[rightIdx] <= pivotKey && rightIdx<lastIDx do    
+        rightIdx <- rightIdx + 1
+
+    new ArraySegment<_>(origArray, offset=firstIdx, count=leftIdx - firstIdx + 1), 
+    new ArraySegment<_>(origArray, offset=rightIdx, count=lastIDx - rightIdx + 1)
+
+let minChunkSize = 256
 
 let sortUsingPivotPartitioning (projection: 'T -> 'U) (immutableInputArray: 'T[]) =
     let clone = Array.zeroCreate immutableInputArray.Length    
@@ -58,12 +65,24 @@ let sortUsingPivotPartitioning (projection: 'T -> 'U) (immutableInputArray: 'T[]
             inputKeys.[idx] <- projection immutableInputArray.[idx]) |> ignore
 
     let rec sortChunk (segment: ArraySegment<_>) freeWorkers =      
-        match freeWorkers with
-        | 1 -> 
+        match freeWorkers with        
+        | 0 | 1 -> 
             Array.Sort(inputKeys,clone,segment.Offset,segment.Count,null)
         | twoOrMore -> 
             let left,right = partitionIntoTwo segment inputKeys
-            Parallel.Invoke((fun () -> sortChunk left (freeWorkers/2)),(fun () -> sortChunk right (freeWorkers - (freeWorkers/2))))        
+            if left.Count <= minChunkSize && right.Count <= minChunkSize then
+                sortChunk left 0
+                sortChunk right 0
+            elif left.Count <= minChunkSize then
+                sortChunk left 0
+                sortChunk right freeWorkers
+            elif right.Count <= minChunkSize then
+                sortChunk left freeWorkers
+                sortChunk right 0
+            else
+                let itemsPerWorker = max ((left.Count + right.Count) / freeWorkers) 1
+                let workersForLeft = min (twoOrMore-1) (max 1 (left.Count / itemsPerWorker))
+                Parallel.Invoke((fun () -> sortChunk left workersForLeft),(fun () -> sortChunk right (freeWorkers - workersForLeft)))        
 
         
     let bigSegment = new ArraySegment<_>(clone, 0, clone.Length)
