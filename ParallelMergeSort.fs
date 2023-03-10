@@ -7,9 +7,9 @@ open System.Threading.Tasks
 // Benchmark was run using: 11th Gen Intel Core i9-11950H 2.60GHz, 1 CPU, 16 logical and 8 physical cores
 let mutable maxPartitions = Environment.ProcessorCount // The maximum number of partitions to use
 let private sequentialCutoffForSorting = 2_500 // Arrays smaller then this will be sorted sequentially
-let private minChunkSize = 64 // The minimum size of a chunk to be sorted in parallel
+let private minChunkSize = 8 // The minimum size of a chunk to be sorted in parallel
 
-let private createPartitions (array: 'T[]) =
+let createPartitions (array: 'T[]) =
     [|
         let chunkSize =
             match array.Length with
@@ -80,23 +80,20 @@ let inline mergeSortedRunsIntoResult (left:ArraySegment<'T>,right: ArraySegment<
             bufResultValues.[finalIdx] <- origArray.[leftIdx]
             bufResultKeys.[finalIdx] <- inputKeys.[leftIdx]
             leftIdx <- leftIdx + 1
+            finalIdx <- finalIdx + 1
         else
             bufResultValues.[finalIdx] <- origArray.[rightIdx]
             bufResultKeys.[finalIdx] <- inputKeys.[rightIdx]
             rightIdx <- rightIdx + 1
-        finalIdx <- finalIdx + 1
+            finalIdx <- finalIdx + 1        
 
-    while leftIdx < leftMax do
-        bufResultValues.[finalIdx] <- origArray.[leftIdx]
-        bufResultKeys.[finalIdx] <- inputKeys.[leftIdx]
-        leftIdx <- leftIdx + 1
-        finalIdx <- finalIdx + 1
+    if leftIdx < leftMax then
+        Array.Copy(origArray, leftIdx, bufResultValues, finalIdx, leftMax - leftIdx)
+        Array.Copy(inputKeys, leftIdx, bufResultKeys, finalIdx, leftMax - leftIdx)
 
-
-    while finalIdx < rightMax do
-        bufResultValues.[finalIdx] <- origArray.[finalIdx]  
-        bufResultKeys.[finalIdx] <- inputKeys.[finalIdx]
-        finalIdx <- finalIdx + 1
+    if finalIdx < rightMax then
+        Array.Copy(origArray, rightIdx, bufResultValues, finalIdx, rightMax - rightIdx)
+        Array.Copy(inputKeys, rightIdx, bufResultKeys, finalIdx, rightMax - rightIdx)
 
     new ArraySegment<'T>(bufResultValues, left.Offset, left.Count + right.Count)
 
@@ -159,6 +156,7 @@ let justCreateRunsForReference (projection: 'T -> 'U) (immutableInputArray: 'T[]
     preSortedPartitions
 
 
+
 let mergeUsingHeap (projection: 'T -> 'U) (immutableInputArray: 'T[]) =
     let len = immutableInputArray.Length
     let inputKeys = Array.zeroCreate len
@@ -172,6 +170,7 @@ let mergeUsingHeap (projection: 'T -> 'U) (immutableInputArray: 'T[]) =
     
 
     let heap = preSortedPartitions |> Array.mapi (fun runId r -> struct(runId,r.Offset,inputKeys[r.Offset]))
+    let mutable heapSize = heap.Length
     let inline getKey struct(runId,offset,key) = key
     let inline getKeyForIdx idx = getKey heap.[idx]
     let inline swap idxLeft idxRight =
@@ -190,31 +189,40 @@ let mergeUsingHeap (projection: 'T -> 'U) (immutableInputArray: 'T[]) =
             pushUp parent
 
     let rec pushDown idx =
-        let left = leftChildIDx idx
-        let right = richtChildIDx idx
+        let left = leftChildIDx idx    
+        match heapSize - left with
+        | zeroOrLess when zeroOrLess <= 0 -> ()
+        | 1 -> 
+            let struct(leftRun,leftOffset,leftKey) = heap.[left]
+            let struct(thisRun,thisOffest,thisKey) = heap.[idx]
+            if leftKey < thisKey then
+                swap left idx
+        | twoOrMore  ->
+            let struct(thisRun,thisOffest,thisKey) = heap.[idx]
+            let struct(leftRun,leftOffset,leftKey) = heap.[left]
+            let struct(rightRun,rightOffset,rightKey) = heap.[left+1]
+            let smallerIdx,smallerKey = if leftKey < rightKey then left,leftKey else left+1,rightKey
+            if smallerKey < thisKey then
+                swap smallerIdx idx
+                pushDown smallerIdx
 
-        let smallerOfSelfOrLeftChild = 
-            if left < heap.Length && getKeyForIdx(left) < getKeyForIdx(idx) then left
-            else idx
-        let smallerOfSelfOrBothChildren = 
-            if right < heap.Length && getKeyForIdx(right) < getKeyForIdx(smallerOfSelfOrLeftChild) then right
-            else smallerOfSelfOrLeftChild
-
-        if smallerOfSelfOrBothChildren <> idx then
-            swap smallerOfSelfOrBothChildren idx
-            pushDown smallerOfSelfOrBothChildren
 
     for i=heap.Length-1 downto 0 do
         pushUp i
+
+    let maxCounts = preSortedPartitions |> Array.map (fun r -> r.Offset + r.Count)
 
     for finalIdx=0 to resultsArray.Length-1 do
         let struct(runId,offset,key) = heap.[0]
         resultsArray.[finalIdx] <- workingSpace[offset]
 
-        if offset+1 < preSortedPartitions.[runId].Offset + preSortedPartitions.[runId].Count then
-            heap.[0] <- struct(runId,offset+1,inputKeys.[offset+1])
+        let nextOffset = offset + 1
+        if nextOffset < maxCounts[runId] then
+            heap.[0] <- struct(runId,nextOffset,inputKeys.[nextOffset])
+            pushDown 0
         else
             heap.[0] <- struct(0,0,maxValueOverAll)
-        pushDown 0
+            pushDown 0
+            heapSize <- heapSize - 1     
 
     resultsArray

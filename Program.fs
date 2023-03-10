@@ -48,7 +48,7 @@ type ArrayParallelSortBenchMark<'T when 'T :> IBenchMarkElement<'T> and 'T:equal
     let r = new Random(42)
 
     //[<Params(2_500,5_000,50_000,500_000,4_000_000,20_000_000)>] 
-    [<Params(50_000,250_000,1_250_000)>] 
+    [<Params(250,1_000,4_000,20_000,100_000)>] 
     member val NumberOfItems = -1 with get,set
     member val ArrayWithItems = Unchecked.defaultof<'T[]> with get,set
 
@@ -57,11 +57,11 @@ type ArrayParallelSortBenchMark<'T when 'T :> IBenchMarkElement<'T> and 'T:equal
     member this.GlobalSetup () = 
         this.ArrayWithItems <- Array.init this.NumberOfItems (fun idx -> 'T.Create(idx,r.NextDouble()))  
 
-    [<Benchmark>]
+    [<Benchmark(Baseline = true)>]
     member this.Sequential () = 
         this.ArrayWithItems |> SequentialImplementation.sortBy ('T.Projection())
 
-    [<Benchmark(Baseline = true)>]
+    [<Benchmark>]
     member this.PLINQDefault () = 
         this.ArrayWithItems |> PLINQImplementation.sortBy ('T.Projection())
 
@@ -81,12 +81,15 @@ type ArrayParallelSortBenchMark<'T when 'T :> IBenchMarkElement<'T> and 'T:equal
         ParallelMergeSort.maxPartitions <- Environment.ProcessorCount
         this.ArrayWithItems |> ParallelMergeSort.mergeUsingHeap ('T.Projection())
 
+    [<Benchmark>]
+    member this.MergeUsingPivotPartitioning () = 
+        ParallelMergeSort.maxPartitions <- Environment.ProcessorCount
+        this.ArrayWithItems |> ParallelPivotBasedSort.sortUsingPivotPartitioning ('T.Projection())
+
 
 
 
 [<EntryPoint>]
-let main argv =
-
-
+let main argv =    
     BenchmarkSwitcher.FromTypes([|typedefof<ArrayParallelSortBenchMark<ReferenceRecord> >|]).Run(argv) |> ignore   
     0

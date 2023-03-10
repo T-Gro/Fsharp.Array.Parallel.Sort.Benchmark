@@ -7,6 +7,7 @@
 
   <ItemGroup>
     <Compile Include="ParallelMergeSort.fs" />
+    <Compile Include="ParallelPivotBasedSort.fs" />
     <Compile Include="NaiveNwayMerge.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
