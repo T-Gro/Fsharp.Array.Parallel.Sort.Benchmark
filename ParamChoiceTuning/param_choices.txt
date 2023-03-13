@@ -1,0 +1,22 @@
+|                      Method | NumberOfItems | MinChunkSize |      Mean |    Error |   StdDev | Completed Work Items | Lock Contentions |    Gen0 |    Gen1 | Allocated |
+|---------------------------- |-------------- |------------- |----------:|---------:|---------:|---------------------:|-----------------:|--------:|--------:|----------:|
+| MergeUsingPivotPartitioning |          1000 |          256 |  69.41 us | 0.789 us | 0.659 us |              11.4528 |                - | 10.3760 |  0.8545 | 123.09 KB |
+| MergeUsingPivotPartitioning |          1000 |          512 |  71.97 us | 1.223 us | 1.021 us |              11.1521 |           0.0017 | 10.3760 |  0.8545 | 123.21 KB |
+| MergeUsingPivotPartitioning |          1000 |         1024 |  73.19 us | 1.372 us | 1.735 us |              11.0536 |           0.0016 | 10.3760 |  0.7324 | 123.13 KB |
+| MergeUsingPivotPartitioning |          1000 |         2048 |  69.16 us | 1.308 us | 2.952 us |               9.9751 |           0.0009 | 10.2539 |  0.7324 | 122.71 KB |
+| MergeUsingPivotPartitioning |          2000 |          256 | 145.97 us | 2.631 us | 3.856 us |              12.7117 |           0.0010 | 20.0195 |  2.6855 | 241.68 KB |
+| MergeUsingPivotPartitioning |          2000 |          512 | 139.45 us | 2.124 us | 1.883 us |              12.6187 |           0.0066 | 20.0195 |  2.9297 | 241.68 KB |
+| MergeUsingPivotPartitioning |          2000 |         1024 | 140.42 us | 1.834 us | 1.625 us |              12.7178 |           0.0051 | 20.0195 |  2.6855 | 241.72 KB |
+| MergeUsingPivotPartitioning |          2000 |         2048 | 135.58 us | 1.419 us | 1.258 us |              12.8816 |           0.0012 | 20.0195 |  2.6855 | 241.66 KB |
+| MergeUsingPivotPartitioning |          4000 |          256 | 252.36 us | 4.430 us | 4.144 us |              14.8525 |           0.0005 | 39.5508 |  9.7656 | 478.34 KB |
+| MergeUsingPivotPartitioning |          4000 |          512 | 254.85 us | 3.480 us | 3.255 us |              15.0640 |           0.0005 | 39.5508 |  9.7656 | 478.14 KB |
+| MergeUsingPivotPartitioning |          4000 |         1024 | 253.01 us | 4.976 us | 5.325 us |              14.9160 |           0.0005 | 39.5508 |  9.7656 | 478.03 KB |
+| MergeUsingPivotPartitioning |          4000 |         2048 | 245.31 us | 4.820 us | 5.358 us |              15.1074 |           0.0005 | 39.5508 |  9.7656 | 478.33 KB |
+| MergeUsingPivotPartitioning |          6000 |          256 | 348.80 us | 4.105 us | 3.840 us |              16.3237 |           0.0039 | 58.5938 | 19.0430 | 714.79 KB |
+| MergeUsingPivotPartitioning |          6000 |          512 | 340.03 us | 5.441 us | 4.823 us |              17.1108 |           0.0020 | 58.5938 | 19.0430 | 715.65 KB |
+| MergeUsingPivotPartitioning |          6000 |         1024 | 342.42 us | 5.344 us | 4.737 us |              16.9702 |           0.0029 | 58.5938 | 19.0430 | 714.91 KB |
+| MergeUsingPivotPartitioning |          6000 |         2048 | 357.89 us | 4.284 us | 4.007 us |              16.7866 |           0.0010 | 58.5938 | 19.0430 | 715.16 KB |
+| MergeUsingPivotPartitioning |          8000 |          256 | 431.96 us | 7.079 us | 5.527 us |              18.9263 |           0.0044 | 78.1250 | 25.8789 | 952.32 KB |
+| MergeUsingPivotPartitioning |          8000 |          512 | 435.52 us | 4.835 us | 4.037 us |              18.8457 |           0.0098 | 78.1250 | 25.8789 | 951.68 KB |
+| MergeUsingPivotPartitioning |          8000 |         1024 | 469.07 us | 4.961 us | 4.641 us |              18.1299 |           0.0005 | 78.1250 | 25.8789 | 951.67 KB |
+| MergeUsingPivotPartitioning |          8000 |         2048 | 426.35 us | 8.399 us | 7.857 us |              19.0020 |           0.0083 | 78.1250 | 25.8789 | 951.74 KB |
