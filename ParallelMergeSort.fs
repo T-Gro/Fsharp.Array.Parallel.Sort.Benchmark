@@ -27,41 +27,6 @@ let createPartitions (array: 'T[]) =
             yield new ArraySegment<'T>(array, offset, array.Length - offset)
     |]
 
-let private prepareSortedRunsInPlaceWith array comparer =
-    let partitions = createPartitions array
-
-    Parallel.For(
-        0,
-        partitions.Length,
-        fun i -> Array.Sort(array, partitions[i].Offset, partitions[i].Count, comparer)
-    )
-    |> ignore
-
-    partitions
-
-let private prepareSortedRunsInPlace (immutableInputArray:'T[]) (workingBuffer:'T[]) (keysBuffer:'A[]) (projector:'T->'A) =
-    assert(Object.ReferenceEquals(immutableInputArray,workingBuffer) = false)
-    assert(immutableInputArray.Length = workingBuffer.Length)
-    assert(immutableInputArray.Length = keysBuffer.Length)
-
-
-    let partitions = createPartitions workingBuffer 
-
-    Parallel.For(
-        0,
-        partitions.Length,
-        fun i -> 
-            let p = partitions[i]
-            Array.Copy(immutableInputArray, p.Offset, workingBuffer, p.Offset, p.Count)
-            for idx=p.Offset to (p.Offset+p.Count-1) do                
-                keysBuffer[idx] <- projector workingBuffer[idx]
-            Array.Sort<_, _>(keysBuffer, workingBuffer, p.Offset, p.Count, null)
-    )
-    |> ignore
-
-    partitions
-
-
 let inline mergeSortedRunsIntoResult (left:ArraySegment<'T>,right: ArraySegment<'T>,inputKeys:'A[],bufResultValues:'T[],bufResultKeys:'A[]) = 
 
     assert(left.Offset + left.Count = right.Offset)
@@ -97,6 +62,98 @@ let inline mergeSortedRunsIntoResult (left:ArraySegment<'T>,right: ArraySegment<
 
     new ArraySegment<'T>(bufResultValues, left.Offset, left.Count + right.Count)
 
+let sortWhileMerging (projection: 'T -> 'U) (immutableInputArray: 'T[])  =
+    let p = createPartitions immutableInputArray
+    let len = immutableInputArray.Length
+    let inputKeysTopLevel = Array.zeroCreate len
+    let workingBufferTopLevel = Array.zeroCreate len
+    let inputKeytsBufferTopLevel = Array.zeroCreate len
+
+    let rec mergeAndSort (segments:ArraySegment<'T>[]) (doTheSort:bool) (inputKeys:'A[]) (bufResultValues:'T[]) (bufResultKeys:'A[])=
+        match segments with
+        | [|p|] when doTheSort -> 
+            Array.Copy(immutableInputArray, p.Offset, workingBufferTopLevel, p.Offset, p.Count)
+            for idx=p.Offset to (p.Offset+p.Count-1) do                
+                inputKeys[idx] <- projection workingBufferTopLevel[idx]
+            Array.Sort<_, _>(inputKeys, workingBufferTopLevel, p.Offset, p.Count, null)
+            p
+
+        | [|p|] when doTheSort = false -> p
+        //| [|left;right|] when doTheSort ->
+        //    let leftTask = Task.Run(fun () -> mergeAndSort [|left|] true inputKeys bufResultValues bufResultKeys)
+        //    mergeAndSort [|right|] true inputKeys bufResultValues bufResultKeys
+        //    leftTask.Wait()
+
+        //    mergeSortedRunsIntoResult(left,right,inputKeys,bufResultValues,bufResultKeys)
+        | [|left;right|] when doTheSort = false ->   
+            mergeSortedRunsIntoResult(left,right,inputKeys,bufResultValues,bufResultKeys) 
+        | twoOrMore ->   
+            let midIndex = twoOrMore.Length/2
+
+            let firstTask = Task.Run(fun () -> mergeAndSort twoOrMore[0..midIndex-1] doTheSort  inputKeys bufResultValues bufResultKeys)
+            let second = mergeAndSort twoOrMore[midIndex..] doTheSort inputKeys bufResultValues bufResultKeys
+            let first = firstTask.Result
+
+            (*
+             After doing recursive merge calls, the roles of input/output arrays are swapped to skip copies
+             In the optimal case of Threads being a power of two, no copying is needed since the roles are balanced across left/right calls
+             Only in the case of unbalanced number of recursive calls below first/second (e.g. when mering 5 runs), we need to copying to align them into the same buffers
+            *)
+            let originalInput = twoOrMore[0].Array    
+            let bothInSameResultArray = Object.ReferenceEquals(first.Array,second.Array)
+            let resultsOfFirstAreBackInOriginal = Object.ReferenceEquals(first.Array,twoOrMore[0].Array)
+        
+            match bothInSameResultArray, resultsOfFirstAreBackInOriginal with
+            | true, true -> mergeAndSort [|first;second|] false inputKeys bufResultValues bufResultKeys
+            | true, false -> mergeAndSort [|first;second|] false bufResultKeys originalInput inputKeys
+            | false, true ->
+                // Results of first are in original, but second is inside workingSpaceValues+bufResultKeys
+                Array.Copy(second.Array, second.Offset, first.Array, second.Offset, second.Count)
+                Array.Copy(bufResultKeys, second.Offset, inputKeys, second.Offset, second.Count)
+                mergeAndSort [|first;second|] false inputKeys bufResultValues bufResultKeys
+            | false, false -> 
+                // Results of first are in workingSpaceValues+bufResultKeys, and second is inside original
+                // Based on midindex selection, second is smaller then first. Therefore we copy second into first, and swap the roles of the buffers used
+                Array.Copy(second.Array, second.Offset, first.Array, second.Offset, second.Count)
+                Array.Copy(inputKeys, second.Offset, bufResultKeys, second.Offset, second.Count)        
+                mergeAndSort  [|first;second|] false bufResultKeys originalInput inputKeys
+
+    let final = mergeAndSort p true inputKeysTopLevel workingBufferTopLevel inputKeytsBufferTopLevel
+    final.Array
+
+
+
+
+          
+
+
+
+
+let private prepareSortedRunsInPlace (immutableInputArray:'T[]) (workingBuffer:'T[]) (keysBuffer:'A[]) (projector:'T->'A) =
+    assert(Object.ReferenceEquals(immutableInputArray,workingBuffer) = false)
+    assert(immutableInputArray.Length = workingBuffer.Length)
+    assert(immutableInputArray.Length = keysBuffer.Length)
+
+
+    let partitions = createPartitions workingBuffer 
+
+    Parallel.For(
+        0,
+        partitions.Length,
+        fun i -> 
+            let p = partitions[i]
+            Array.Copy(immutableInputArray, p.Offset, workingBuffer, p.Offset, p.Count)
+            for idx=p.Offset to (p.Offset+p.Count-1) do                
+                keysBuffer[idx] <- projector workingBuffer[idx]
+            Array.Sort<_, _>(keysBuffer, workingBuffer, p.Offset, p.Count, null)
+    )
+    |> ignore
+
+    partitions
+
+
+
+
 let rec mergeRunsIntoResultBuffers (runs:ArraySegment<'T> [])  inputKeys workingSpaceValues bufResultKeys = 
     match runs with
     | [||]  -> failwith $"Cannot merge {runs.Length} runs into a result buffer"   
@@ -107,12 +164,18 @@ let rec mergeRunsIntoResultBuffers (runs:ArraySegment<'T> [])  inputKeys working
 
     | [|left;right|] -> mergeSortedRunsIntoResult( left, right, inputKeys,workingSpaceValues,bufResultKeys)    
     | threeOrMore ->   
-        let mutable first = Unchecked.defaultof<_>
-        let mutable second = Unchecked.defaultof<_>
         let midIndex = threeOrMore.Length/2
-        Parallel.Invoke( 
-            (fun () -> first <- (mergeRunsIntoResultBuffers threeOrMore[0..midIndex-1] inputKeys workingSpaceValues bufResultKeys)),
-            (fun () -> second <- (mergeRunsIntoResultBuffers threeOrMore[midIndex..] inputKeys workingSpaceValues bufResultKeys)))
+
+        let firstTask = Task.Run(fun () -> mergeRunsIntoResultBuffers threeOrMore[0..midIndex-1] inputKeys workingSpaceValues bufResultKeys)
+        let second = mergeRunsIntoResultBuffers threeOrMore[midIndex..] inputKeys workingSpaceValues bufResultKeys
+        let first = firstTask.Result
+
+        //let mutable first = Unchecked.defaultof<_>
+        //let mutable second = Unchecked.defaultof<_>
+
+        //Parallel.Invoke( 
+        //    (fun () -> first <- (mergeRunsIntoResultBuffers threeOrMore[0..midIndex-1] inputKeys workingSpaceValues bufResultKeys)),
+        //    (fun () -> second <- (mergeRunsIntoResultBuffers threeOrMore[midIndex..] inputKeys workingSpaceValues bufResultKeys)))
 
         (*
          After doing recursive merge calls, the roles of input/output arrays are swapped to skip copies

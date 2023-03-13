@@ -5,6 +5,7 @@ open System.Threading.Tasks
 
 let partitionIntoTwo (orig:ArraySegment<'T>) (keys:'A[]) : ArraySegment<'T> * ArraySegment<'T> =
     let origArray = orig.Array
+
     let inline swap i j = 
         let tmp = keys.[i]
         keys.[i] <- keys.[j]
@@ -66,8 +67,8 @@ let sortUsingPivotPartitioning (projection: 'T -> 'U) (immutableInputArray: 'T[]
 
     let rec sortChunk (segment: ArraySegment<_>) freeWorkers =      
         match freeWorkers with        
-        | 0 | 1 -> 
-            Array.Sort(inputKeys,clone,segment.Offset,segment.Count,null)
+        | 0 | 1 ->         
+            Array.Sort<_,_>(inputKeys,clone,segment.Offset,segment.Count,null)            
         | twoOrMore -> 
             let left,right = partitionIntoTwo segment inputKeys
             if left.Count <= minChunkSize && right.Count <= minChunkSize then
@@ -82,7 +83,10 @@ let sortUsingPivotPartitioning (projection: 'T -> 'U) (immutableInputArray: 'T[]
             else
                 let itemsPerWorker = max ((left.Count + right.Count) / freeWorkers) 1
                 let workersForLeft = min (twoOrMore-1) (max 1 (left.Count / itemsPerWorker))
-                Parallel.Invoke((fun () -> sortChunk left workersForLeft),(fun () -> sortChunk right (freeWorkers - workersForLeft)))        
+                let leftTask = Task.Run(fun () -> sortChunk left workersForLeft)
+                sortChunk right (freeWorkers - workersForLeft)
+                leftTask.Wait()
+                //Parallel.Invoke((fun () -> sortChunk left workersForLeft),(fun () -> sortChunk right (freeWorkers - workersForLeft)))        
 
         
     let bigSegment = new ArraySegment<_>(clone, 0, clone.Length)
