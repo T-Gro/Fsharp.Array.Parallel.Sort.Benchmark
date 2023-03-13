@@ -57,9 +57,10 @@ let inline partitionIntoTwo (orig:ArraySegment<'T>) (keys:'A[]) : ArraySegment<'
     new ArraySegment<_>(origArray, offset=rightIdx, count=lastIDx - rightIdx + 1)
 
 
-let minChunkSize = 256
+
 
 let inline sortUsingPivotPartitioning (projection: 'T -> 'U) (immutableInputArray: 'T[]) =
+    let minChunkSize = ParallelMergeSort.minChunkSize
     let clone = Array.zeroCreate immutableInputArray.Length    
     let inputKeys = Array.zeroCreate immutableInputArray.Length 
     let partitions = createPartitions clone
@@ -91,10 +92,9 @@ let inline sortUsingPivotPartitioning (projection: 'T -> 'U) (immutableInputArra
                 let workersForLeft = min (twoOrMore-1) (max 1 (left.Count / itemsPerWorker))
                 let leftTask = Task.Run(fun () -> sortChunk left workersForLeft)
                 sortChunk right (freeWorkers - workersForLeft)
-                leftTask.Wait()
-                //Parallel.Invoke((fun () -> sortChunk left workersForLeft),(fun () -> sortChunk right (freeWorkers - workersForLeft)))        
+                leftTask.Wait()                
 
         
     let bigSegment = new ArraySegment<_>(clone, 0, clone.Length)
-    sortChunk bigSegment Environment.ProcessorCount
+    sortChunk bigSegment partitions.Length
     clone

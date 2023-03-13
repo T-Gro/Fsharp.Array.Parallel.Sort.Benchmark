@@ -71,10 +71,11 @@ type ArrayParallelSortBenchMark<'T when 'T :> IBenchMarkElement<'T> and 'T:equal
 
     let r = new Random(42)
 
-    //[<Params(500,1_000,2_500,5_000,50_000,500_000,4_000_000,20_000_000)>] 
-    //[<Params(500_000,4_000_000,20_000_000)>] 
-    [<Params(500_000,4_000_000,20_000_000)>] 
+    // [<Params(500,1_000,2_500,5_000,50_000,500_000,4_000_000,20_000_000)>] 
+    [<Params(64,128,256,512,1024)>]     
     member val NumberOfItems = -1 with get,set
+    [<Params(8,16,32,64,128,256)>]     
+    member val MinChunkSize = -1 with get,set
     member val ArrayWithItems = Unchecked.defaultof<'T[]> with get,set
 
 
@@ -86,7 +87,7 @@ type ArrayParallelSortBenchMark<'T when 'T :> IBenchMarkElement<'T> and 'T:equal
     member this.Sequential () = 
         this.ArrayWithItems |> SequentialImplementation.sortBy ('T.Projection())
 
-    [<Benchmark>]
+    //[<Benchmark>]
     member this.PLINQDefault () = 
         this.ArrayWithItems |> PLINQImplementation.sortBy ('T.Projection())
 
