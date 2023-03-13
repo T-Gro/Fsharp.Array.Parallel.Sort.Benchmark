@@ -62,6 +62,64 @@ let inline mergeSortedRunsIntoResult (left:ArraySegment<'T>,right: ArraySegment<
 
     new ArraySegment<'T>(bufResultValues, left.Offset, left.Count + right.Count)
 
+let inline mergeSortedRunsIntoResultWithStopAt (left:ArraySegment<'T>,right: ArraySegment<'T>,inputKeys:'A[],bufResultValues:'T[],bufResultKeys:'A[], stopAt:int) = 
+
+    assert(left.Offset + left.Count = right.Offset)
+    assert(Object.ReferenceEquals(left.Array,right.Array))
+    assert(left.Array.Length = bufResultValues.Length)
+    assert(inputKeys.Length = bufResultValues.Length)
+    assert(bufResultKeys.Length = inputKeys.Length)
+    assert(right.Offset + right.Count <= inputKeys.Length)
+
+
+    let mutable leftIdx,rightIdx,finalIdx = left.Offset,right.Offset, left.Offset
+    let leftMax,rightMax,origArray = left.Offset+left.Count, right.Offset+right.Count, left.Array
+
+    while leftIdx < leftMax && rightIdx < rightMax && finalIdx <= stopAt do 
+        if inputKeys[leftIdx] <= inputKeys[rightIdx] then
+            bufResultValues.[finalIdx] <- origArray.[leftIdx]
+            bufResultKeys.[finalIdx] <- inputKeys.[leftIdx]
+            leftIdx <- leftIdx + 1
+            finalIdx <- finalIdx + 1
+        else
+            bufResultValues.[finalIdx] <- origArray.[rightIdx]
+            bufResultKeys.[finalIdx] <- inputKeys.[rightIdx]
+            rightIdx <- rightIdx + 1
+            finalIdx <- finalIdx + 1   
+
+    new ArraySegment<'T>(bufResultValues, left.Offset, left.Count + right.Count)
+
+let inline mergeSortedRunsIntoResultBackwards (left:ArraySegment<'T>,right: ArraySegment<'T>,inputKeys:'A[],bufResultValues:'T[],bufResultKeys:'A[],stopAt:int) = 
+
+    assert(left.Offset + left.Count = right.Offset)
+    assert(Object.ReferenceEquals(left.Array,right.Array))
+    assert(left.Array.Length = bufResultValues.Length)
+    assert(inputKeys.Length = bufResultValues.Length)
+    assert(bufResultKeys.Length = inputKeys.Length)
+    assert(right.Offset + right.Count <= inputKeys.Length)
+
+
+    let mutable leftIdx,rightIdx,finalIdx = left.Offset+left.Count-1,right.Offset+right.Count-1, right.Offset+right.Count-1
+
+    let leftMin = left.Offset
+    let rightMin = right.Offset
+    let origArray = left.Array
+
+
+    while leftIdx > leftMin && rightIdx > rightMin && finalIdx>= stopAt do 
+        if inputKeys[leftIdx] >= inputKeys[rightIdx] then
+            bufResultValues.[finalIdx] <- origArray.[leftIdx]
+            bufResultKeys.[finalIdx] <- inputKeys.[leftIdx]
+            leftIdx <- leftIdx - 1
+            finalIdx <- finalIdx - 1
+        else
+            bufResultValues.[finalIdx] <- origArray.[rightIdx]
+            bufResultKeys.[finalIdx] <- inputKeys.[rightIdx]
+            rightIdx <- rightIdx - 1
+            finalIdx <- finalIdx - 1
+
+    new ArraySegment<'T>(bufResultValues, left.Offset, left.Count + right.Count)
+
 let sortWhileMerging (projection: 'T -> 'U) (immutableInputArray: 'T[])  =
     let p = createPartitions immutableInputArray
     let len = immutableInputArray.Length
@@ -86,7 +144,14 @@ let sortWhileMerging (projection: 'T -> 'U) (immutableInputArray: 'T[])  =
 
         //    mergeSortedRunsIntoResult(left,right,inputKeys,bufResultValues,bufResultKeys)
         | [|left;right|] when doTheSort = false ->   
-            mergeSortedRunsIntoResult(left,right,inputKeys,bufResultValues,bufResultKeys) 
+            let halfOfSum = (left.Count + right.Count) / 2
+            let midPoint = left.Offset + halfOfSum
+            let firstHalf = Task.Run(fun () -> mergeSortedRunsIntoResultWithStopAt(left,right,inputKeys,bufResultValues,bufResultKeys, midPoint))
+            let fromOppositeOrder = mergeSortedRunsIntoResultBackwards(left,right,inputKeys,bufResultValues,bufResultKeys, midPoint)
+
+            firstHalf.Wait()
+            firstHalf.Result
+             
         | twoOrMore ->   
             let midIndex = twoOrMore.Length/2
 
@@ -120,11 +185,6 @@ let sortWhileMerging (projection: 'T -> 'U) (immutableInputArray: 'T[])  =
 
     let final = mergeAndSort p true inputKeysTopLevel workingBufferTopLevel inputKeytsBufferTopLevel
     final.Array
-
-
-
-
-          
 
 
 

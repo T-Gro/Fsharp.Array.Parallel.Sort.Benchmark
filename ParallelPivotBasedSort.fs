@@ -3,7 +3,7 @@ open ParallelMergeSort
 open System
 open System.Threading.Tasks
 
-let partitionIntoTwo (orig:ArraySegment<'T>) (keys:'A[]) : ArraySegment<'T> * ArraySegment<'T> =
+let inline partitionIntoTwo (orig:ArraySegment<'T>) (keys:'A[]) : ArraySegment<'T> * ArraySegment<'T> =
     let origArray = orig.Array
 
     let inline swap i j = 
@@ -19,6 +19,7 @@ let partitionIntoTwo (orig:ArraySegment<'T>) (keys:'A[]) : ArraySegment<'T> * Ar
         if keys.[i] > keys.[j] then
             swap i j
 
+    // Set pivot to be a median of {first,mid,last}
     
     let firstIdx = orig.Offset
     let lastIDx = orig.Offset + orig.Count - 1
@@ -45,6 +46,8 @@ let partitionIntoTwo (orig:ArraySegment<'T>) (keys:'A[]) : ArraySegment<'T> * Ar
             leftIdx <- leftIdx + 1
             rightIdx <- rightIdx - 1
 
+    // There might be more elements being (=)pivot. Exclude them from recursive step
+
     while keys[leftIdx] >= pivotKey && leftIdx>firstIdx do   
         leftIdx <- leftIdx - 1
     while keys[rightIdx] <= pivotKey && rightIdx<lastIDx do    
@@ -53,9 +56,10 @@ let partitionIntoTwo (orig:ArraySegment<'T>) (keys:'A[]) : ArraySegment<'T> * Ar
     new ArraySegment<_>(origArray, offset=firstIdx, count=leftIdx - firstIdx + 1), 
     new ArraySegment<_>(origArray, offset=rightIdx, count=lastIDx - rightIdx + 1)
 
+
 let minChunkSize = 256
 
-let sortUsingPivotPartitioning (projection: 'T -> 'U) (immutableInputArray: 'T[]) =
+let inline sortUsingPivotPartitioning (projection: 'T -> 'U) (immutableInputArray: 'T[]) =
     let clone = Array.zeroCreate immutableInputArray.Length    
     let inputKeys = Array.zeroCreate immutableInputArray.Length 
     let partitions = createPartitions clone
@@ -71,6 +75,7 @@ let sortUsingPivotPartitioning (projection: 'T -> 'U) (immutableInputArray: 'T[]
             Array.Sort<_,_>(inputKeys,clone,segment.Offset,segment.Count,null)            
         | twoOrMore -> 
             let left,right = partitionIntoTwo segment inputKeys
+            // Really small arrays are not worth creating a Task for, sort them here
             if left.Count <= minChunkSize && right.Count <= minChunkSize then
                 sortChunk left 0
                 sortChunk right 0
@@ -81,6 +86,7 @@ let sortUsingPivotPartitioning (projection: 'T -> 'U) (immutableInputArray: 'T[]
                 sortChunk left freeWorkers
                 sortChunk right 0
             else
+                // Pivot-based partitions might be inbalanced. Split  free workers for left/right proportional to their size
                 let itemsPerWorker = max ((left.Count + right.Count) / freeWorkers) 1
                 let workersForLeft = min (twoOrMore-1) (max 1 (left.Count / itemsPerWorker))
                 let leftTask = Task.Run(fun () -> sortChunk left workersForLeft)

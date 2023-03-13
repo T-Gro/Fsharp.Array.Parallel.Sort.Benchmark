@@ -73,7 +73,7 @@ type ArrayParallelSortBenchMark<'T when 'T :> IBenchMarkElement<'T> and 'T:equal
 
     //[<Params(500,1_000,2_500,5_000,50_000,500_000,4_000_000,20_000_000)>] 
     //[<Params(500_000,4_000_000,20_000_000)>] 
-    [<Params(500_000)>] 
+    [<Params(500_000,4_000_000,20_000_000)>] 
     member val NumberOfItems = -1 with get,set
     member val ArrayWithItems = Unchecked.defaultof<'T[]> with get,set
 
@@ -94,12 +94,12 @@ type ArrayParallelSortBenchMark<'T when 'T :> IBenchMarkElement<'T> and 'T:equal
     member this.MergeSortUsingTuples () = 
         this.ArrayWithItems |> MergeSortUsingTuples.sortBy ('T.Projection())
 
-    [<Benchmark>]
+    //[<Benchmark>]
     member this.ParallelMergeAllCpu () = 
         ParallelMergeSort.maxPartitions <- Environment.ProcessorCount
         this.ArrayWithItems |> ParallelMergeSort.sortBy ('T.Projection())
 
-    [<Benchmark>]
+    //[<Benchmark>]
     member this.SortWhileMerging () = 
         ParallelMergeSort.maxPartitions <- Environment.ProcessorCount
         this.ArrayWithItems |> ParallelMergeSort.sortBy ('T.Projection())
@@ -115,7 +115,7 @@ type ArrayParallelSortBenchMark<'T when 'T :> IBenchMarkElement<'T> and 'T:equal
         ParallelMergeSort.maxPartitions <- Environment.ProcessorCount
         this.ArrayWithItems |> ParallelMergeSort.mergeUsingHeap ('T.Projection())
 
-    //[<Benchmark>]
+    [<Benchmark>]
     member this.MergeUsingPivotPartitioning () = 
         ParallelMergeSort.maxPartitions <- Environment.ProcessorCount
         this.ArrayWithItems |> ParallelPivotBasedSort.sortUsingPivotPartitioning ('T.Projection())
